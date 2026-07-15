@@ -154,7 +154,11 @@ func validateMachinePoolPlatform(platform *types.Platform, p *types.MachinePoolP
 	}
 	if p.AWS != nil {
 		validate(aws.Name, p.AWS, func(f *field.Path) field.ErrorList {
-			return awsvalidation.ValidateMachinePool(platform.AWS, p.AWS, pool.Name, f)
+			errs := awsvalidation.ValidateMachinePool(platform.AWS, p.AWS, pool.Name, f)
+			if len(p.AWS.NonRootVolumes) != 0 && len(pool.DiskSetup) != 0 {
+				errs = append(errs, awsvalidation.ValidateNonRootVolumesDiskSetup(p.AWS, pool, f)...)
+			}
+			return errs
 		})
 	}
 	if p.Azure != nil {

@@ -146,7 +146,7 @@ func TestForDiskSetup(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			machineConfig, err := ForDiskSetup(tc.role, tc.device, tc.label, tc.path, tc.diskType)
+			machineConfig, err := ForDiskSetup(tc.role, "", tc.device, tc.label, tc.path, tc.diskType)
 
 			if tc.expectedError != "" {
 				assert.Error(t, err)
@@ -322,7 +322,7 @@ RequiredBy=local-fs.target
 		t.Run(tc.name, func(t *testing.T) {
 			// Test the template execution by creating a machine config
 			// and verifying the generated unit content
-			machineConfig, err := ForDiskSetup("test", "/dev/sdb", tc.mountUnit.Label, tc.mountUnit.MountPath, types.Etcd)
+			machineConfig, err := ForDiskSetup("test", "", "/dev/sdb", tc.mountUnit.Label, tc.mountUnit.MountPath, types.Etcd)
 			assert.NoError(t, err)
 
 			ignConfig, err := parseIgnitionConfig(machineConfig.Spec.Config.Raw)
@@ -359,7 +359,7 @@ WantedBy=swap.target
 		t.Run(tc.name, func(t *testing.T) {
 			// Test the template execution by creating a machine config
 			// and verifying the generated unit content
-			machineConfig, err := ForDiskSetup("test", "/dev/sdb", tc.label, "", types.Swap)
+			machineConfig, err := ForDiskSetup("test", "", "/dev/sdb", tc.label, "", types.Swap)
 			assert.NoError(t, err)
 
 			ignConfig, err := parseIgnitionConfig(machineConfig.Spec.Config.Raw)
@@ -403,7 +403,7 @@ func TestLabelSanitization(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			machineConfig, err := ForDiskSetup("test", "/dev/sdb", tc.inputLabel, "/var/lib/data", types.Etcd)
+			machineConfig, err := ForDiskSetup("test", "", "/dev/sdb", tc.inputLabel, "/var/lib/data", types.Etcd)
 			assert.NoError(t, err)
 
 			ignConfig, err := parseIgnitionConfig(machineConfig.Spec.Config.Raw)

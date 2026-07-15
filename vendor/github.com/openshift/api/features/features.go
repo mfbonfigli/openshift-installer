@@ -785,6 +785,14 @@ var (
 					enable(inTechPreviewNoUpgrade(), inDevPreviewNoUpgrade()).
 					mustRegister()
 
+	FeatureGateAWSMultiDisk = newFeatureGate("AWSMultiDisk").
+					reportProblemsToJiraComponent("splat").
+					contactPerson("fbonfigl").
+					productScope(ocpSpecific).
+					enhancementPR("https://github.com/openshift/enhancements/pull/XXXX").
+					enable(inTechPreviewNoUpgrade(), inDevPreviewNoUpgrade()).
+					mustRegister()
+
 	FeatureGateAWSDedicatedHosts = newFeatureGate("AWSDedicatedHosts").
 					reportProblemsToJiraComponent("splat").
 					contactPerson("rvanderp3").

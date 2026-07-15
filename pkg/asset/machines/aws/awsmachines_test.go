@@ -266,21 +266,86 @@ func TestGenerateMachines(t *testing.T) {
 			wantErr: `invalid subnet ID for zone B`,
 		},
 		// TODO: add more use cases.
-		// {
-		// 	name: "managed vpc, default zones region, 5 zones A to E, 3 machines should be in A, B and C private subnet",
-		// },
-		// {
-		// 	name: "managed vpc, default zones region, 5 zones A to E, 3 machines should be in A, B and C private subnet",
-		// },
-		// {
-		// 	name: "byo vpc, 2 zones subnets A and B, 3 machines' subnet should be in A, B and A",
-		// },
-		// {
-		// 	name: "managed vpc, default zones region, 5 zones A to E, bootstrap should be in zone A public subnet",
-		// },
-		// {
-		// 	name: "topology ha, managed vpc, two zones subnets A and B, bootstrap node using public subnet A",
-		// },
+		{
+			name:      "non-root volumes are mapped to CAPI NonRootVolumes",
+			clusterID: stubClusterID,
+			input: &MachineInput{
+				Role: "master",
+				Pool: &types.MachinePool{
+					Name:     "master",
+					Replicas: ptr.To(int64(1)),
+					Platform: types.MachinePoolPlatform{
+						AWS: &awstypes.MachinePool{
+							Zones: []string{"A"},
+							NonRootVolumes: []awstypes.EC2NonRootVolume{
+								{
+									DeviceName: "/dev/sdb",
+									Size:       200,
+									Type:       "gp3",
+									IOPS:       5000,
+									Throughput: ptr.To(int32(500)),
+								},
+							},
+						},
+					},
+				},
+				Subnets:  make(aws.SubnetsByZone),
+				PublicIP: false,
+				Ignition: &capa.Ignition{
+					StorageType: capa.IgnitionStorageTypeOptionUnencryptedUserData,
+				},
+			},
+			wantInfraFiles: func() []*asset.RuntimeFile {
+				machineName := fmt.Sprintf("%s-%s-%d", stubClusterID, "master", 0)
+				machine := &capa.AWSMachine{
+					TypeMeta: metav1.TypeMeta{
+						APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+						Kind:       "AWSMachine",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   machineName,
+						Labels: map[string]string{"cluster.x-k8s.io/control-plane": ""},
+					},
+					Spec: capa.AWSMachineSpec{
+						InstanceMetadataOptions: &capa.InstanceMetadataOptions{
+							HTTPEndpoint: capa.InstanceMetadataEndpointStateEnabled,
+							HTTPTokens:   capa.HTTPTokensStateOptional,
+						},
+						AMI: capa.AMIReference{
+							ID: ptr.To(""),
+						},
+						IAMInstanceProfile: fmt.Sprintf("%s-%s-profile", stubClusterID, "master"),
+						PublicIP:           ptr.To(false),
+						Subnet: &capa.AWSResourceReference{
+							Filters: []capa.Filter{{Name: "tag:Name", Values: []string{
+								fmt.Sprintf("%s-subnet-private-%s", stubClusterID, "A"),
+							}}},
+						},
+						SSHKeyName: ptr.To(""),
+						RootVolume: &capa.Volume{
+							Encrypted: ptr.To(true),
+						},
+						NonRootVolumes: []capa.Volume{
+							{
+								DeviceName: "/dev/sdb",
+								Size:       200,
+								Type:       "gp3",
+								IOPS:       5000,
+								Throughput: ptr.To(int64(500)),
+								Encrypted:  ptr.To(true),
+							},
+						},
+						Ignition: &capa.Ignition{
+							StorageType: capa.IgnitionStorageTypeOptionUnencryptedUserData,
+						},
+					},
+				}
+				return []*asset.RuntimeFile{{
+					File:   asset.File{Filename: fmt.Sprintf("10_inframachine_%s.yaml", machineName)},
+					Object: machine,
+				}}
+			}(),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

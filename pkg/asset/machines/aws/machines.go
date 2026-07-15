@@ -33,6 +33,7 @@ type machineProviderInput struct {
 	userDataSecret   string
 	instanceProfile  string
 	root             *awstypes.EC2RootVolume
+	nonRootVolumes   []awstypes.EC2NonRootVolume
 	imds             awstypes.EC2Metadata
 	userTags         map[string]string
 	publicSubnet     bool
@@ -77,6 +78,7 @@ func Machines(clusterID string, region string, subnets aws.SubnetsByZone, pool *
 			userDataSecret:   userDataSecret,
 			instanceProfile:  instanceProfile,
 			root:             &mpool.EC2RootVolume,
+			nonRootVolumes:   mpool.NonRootVolumes,
 			imds:             mpool.EC2Metadata,
 			userTags:         userTags,
 			publicSubnet:     publicSubnet,
@@ -262,6 +264,25 @@ func provider(in *machineProviderInput) (*machineapi.AWSMachineProviderConfig, e
 		CredentialsSecret: &corev1.LocalObjectReference{Name: "aws-cloud-credentials"},
 		Placement:         machineapi.Placement{Region: in.region, AvailabilityZone: in.zone},
 		SecurityGroups:    securityGroups,
+	}
+
+	for _, vol := range in.nonRootVolumes {
+		kmsKeyARN := vol.KMSKeyARN
+		if kmsKeyARN == "" {
+			kmsKeyARN = in.root.KMSKeyARN
+		}
+		bdm := machineapi.BlockDeviceMappingSpec{
+			DeviceName: pointer.String(vol.DeviceName),
+			EBS: &machineapi.EBSBlockDeviceSpec{
+				VolumeType:    pointer.String(vol.Type),
+				VolumeSize:    pointer.Int64(int64(vol.Size)),
+				Iops:          pointer.Int64(int64(vol.IOPS)),
+				ThroughputMib: vol.Throughput,
+				Encrypted:     pointer.Bool(true),
+				KMSKey:        machineapi.AWSResourceReference{ARN: pointer.String(kmsKeyARN)},
+			},
+		}
+		config.BlockDevices = append(config.BlockDevices, bdm)
 	}
 
 	visibility := "private"

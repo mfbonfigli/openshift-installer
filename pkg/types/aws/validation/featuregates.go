@@ -44,5 +44,33 @@ func GatedFeatures(c *types.InstallConfig) []featuregates.GatedInstallConfigFeat
 		}
 	}
 
+	// Check for non-root volumes (multi-disk) on default, controlPlane, and compute pools
+	if c.AWS.DefaultMachinePlatform != nil && len(c.AWS.DefaultMachinePlatform.NonRootVolumes) != 0 {
+		gatedFeatures = append(gatedFeatures, featuregates.GatedInstallConfigFeature{
+			FeatureGateName: features.FeatureGateAWSMultiDisk,
+			Condition:       true,
+			Field:           field.NewPath("platform", "aws", "defaultMachinePlatform", "nonRootVolumes"),
+		})
+	}
+
+	if c.ControlPlane != nil && c.ControlPlane.Platform.AWS != nil && len(c.ControlPlane.Platform.AWS.NonRootVolumes) != 0 {
+		gatedFeatures = append(gatedFeatures, featuregates.GatedInstallConfigFeature{
+			FeatureGateName: features.FeatureGateAWSMultiDisk,
+			Condition:       true,
+			Field:           field.NewPath("controlPlane", "platform", "aws", "nonRootVolumes"),
+		})
+	}
+
+	for idx, compute := range c.Compute {
+		if compute.Platform.AWS != nil && len(compute.Platform.AWS.NonRootVolumes) != 0 {
+			gatedFeatures = append(gatedFeatures, featuregates.GatedInstallConfigFeature{
+				FeatureGateName: features.FeatureGateAWSMultiDisk,
+				Condition:       true,
+				Field:           field.NewPath("compute").Index(idx).Child("platform", "aws", "nonRootVolumes"),
+			})
+			break
+		}
+	}
+
 	return gatedFeatures
 }
