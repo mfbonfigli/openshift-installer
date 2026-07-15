@@ -856,6 +856,25 @@ func (w *Worker) Generate(ctx context.Context, dependencies asset.Parents) error
 		return errors.Wrap(err, "failed to create MachineConfig manifests for worker machines")
 	}
 
+	if installConfig.Config.Enabled(features.FeatureGateMultiDiskSetup) {
+		for _, pool := range installConfig.Config.Compute {
+			for _, diskSetup := range pool.DiskSetup {
+				if diskSetup.Type == types.Swap {
+					kubeletCfg, err := machineconfig.ForSwapEnabled("worker")
+					if err != nil {
+						return errors.Wrap(err, "failed to create kubelet config for swap on worker machines")
+					}
+					kubeletManifest, err := machineconfig.KubeletConfigManifest(kubeletCfg, directory)
+					if err != nil {
+						return errors.Wrap(err, "failed to marshal kubelet config manifest for worker machines")
+					}
+					w.MachineConfigFiles = append(w.MachineConfigFiles, kubeletManifest)
+					break
+				}
+			}
+		}
+	}
+
 	if w.MachineSetFiles, err = serialize(machineSets, workerMachineSetFileName, false); err != nil {
 		return fmt.Errorf("failed to serialize worker machine sets: %w", err)
 	}

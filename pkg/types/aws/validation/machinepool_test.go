@@ -789,7 +789,7 @@ func TestValidateNonRootVolumesDiskSetup(t *testing.T) {
 			},
 		},
 		{
-			name: "swap disk setup not supported on AWS",
+			name: "valid matching swap disk setup",
 			pool: &aws.MachinePool{
 				NonRootVolumes: []aws.EC2NonRootVolume{
 					{DeviceName: "/dev/sdc", Size: 64, Type: "gp3"},
@@ -803,7 +803,6 @@ func TestValidateNonRootVolumesDiskSetup(t *testing.T) {
 					},
 				},
 			},
-			expected: `swap disk setup is not yet supported on AWS`,
 		},
 		{
 			name: "mismatched platformDiskID",

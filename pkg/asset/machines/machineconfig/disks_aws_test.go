@@ -40,6 +40,14 @@ func TestForDiskSetupAWSPlatform(t *testing.T) {
 			path:     "/var/lib/etcd",
 			diskType: types.Etcd,
 		},
+		{
+			name:     "swap disk setup",
+			role:     "master",
+			device:   "/dev/sdc",
+			label:    "swap",
+			path:     "",
+			diskType: types.Swap,
+		},
 	}
 
 	for _, tc := range cases {
@@ -70,7 +78,12 @@ func TestForDiskSetupAWSPlatform(t *testing.T) {
 			assert.NotNil(t, ignConfig.Storage.Files[0].Mode)
 			assert.Equal(t, 0755, *ignConfig.Storage.Files[0].Mode)
 
-			assertAWSEtcdUnits(t, ignConfig, tc.label)
+			switch tc.diskType {
+			case types.Etcd:
+				assertAWSEtcdUnits(t, ignConfig, tc.label)
+			case types.Swap:
+				assertAWSSwapUnits(t, ignConfig, tc.label)
+			}
 		})
 	}
 }
@@ -98,7 +111,7 @@ func TestForDiskSetupAWSPlatformSetupServiceContent(t *testing.T) {
 	}
 
 	assert.Contains(t, setupUnit, "After=systemd-udev-settle.service ostree-remount.service")
-	assert.Contains(t, setupUnit, "ExecStart=/usr/local/bin/aws-nvme-disk-setup.sh sdb etcd")
+	assert.Contains(t, setupUnit, "ExecStart=/usr/local/bin/aws-nvme-disk-setup.sh sdb etcd etcd")
 	assert.Contains(t, setupUnit, "Type=oneshot")
 	assert.Contains(t, setupUnit, "RemainAfterExit=yes")
 }
@@ -143,7 +156,7 @@ func TestForDiskSetupAWSPlatformDeviceNameStripping(t *testing.T) {
 			if !assert.NotEmpty(t, setupUnit) {
 				return
 			}
-			assert.Contains(t, setupUnit, tc.expectedBdev+" etcd\n")
+			assert.Contains(t, setupUnit, tc.expectedBdev+" etcd")
 		})
 	}
 }
@@ -173,3 +186,25 @@ func assertAWSEtcdUnits(t *testing.T, ignConfig *igntypes.Config, label string) 
 	assert.True(t, hasMountUnit, "mount unit not found")
 }
 
+func assertAWSSwapUnits(t *testing.T, ignConfig *igntypes.Config, label string) {
+	t.Helper()
+
+	if !assert.Len(t, ignConfig.Systemd.Units, 2, "should have setup service + swap unit") {
+		return
+	}
+
+	var hasSetupService, hasSwapUnit bool
+	for _, u := range ignConfig.Systemd.Units {
+		switch {
+		case u.Name == "aws-disk-setup-"+label+".service":
+			hasSetupService = true
+			assert.True(t, *u.Enabled)
+		case u.Name == "dev-disk-by\\x2dpartlabel-"+label+".swap":
+			hasSwapUnit = true
+			assert.True(t, *u.Enabled)
+			assert.Contains(t, *u.Contents, "What=/dev/disk/by-partlabel/"+label)
+		}
+	}
+	assert.True(t, hasSetupService, "setup service unit not found")
+	assert.True(t, hasSwapUnit, "swap unit not found")
+}

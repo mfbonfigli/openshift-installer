@@ -5,14 +5,16 @@
 # are not available during early boot, so the script reads the vendor-specific
 # data via "nvme amzn id-ctrl" to match the intended device.
 #
-# Usage: aws-nvme-disk-setup.sh <bdev> <label>
-#   bdev  - block device mapping name without /dev/ prefix (e.g. "sdb")
-#   label - partition label (e.g. "etcd")
+# Usage: aws-nvme-disk-setup.sh <bdev> <label> <disk-type>
+#   bdev      - block device mapping name without /dev/ prefix (e.g. "sdb")
+#   label     - partition label (e.g. "etcd")
+#   disk-type - one of: etcd, swap, userDefined
 
 set -euo pipefail
 
 TARGET_BDEV="$1"
 LABEL="$2"
+DISK_TYPE="$3"
 
 if blkid -t PARTLABEL="$LABEL" > /dev/null 2>&1; then
   echo "Partition $LABEL already exists, skipping setup"
@@ -34,13 +36,23 @@ if [ -z "$DEVICE" ]; then
   exit 1
 fi
 
-echo "Found $DEVICE for bdev=$TARGET_BDEV, setting up as $LABEL"
+echo "Found $DEVICE for bdev=$TARGET_BDEV, setting up as $LABEL ($DISK_TYPE)"
 
 # Wipe existing partition table
 sfdisk --delete "$DEVICE" 2>/dev/null || true
 wipefs -a "$DEVICE"
 
-echo "start=2048, name=$LABEL" | sfdisk --label gpt "$DEVICE"
-udevadm settle
-PART="/dev/disk/by-partlabel/$LABEL"
-mkfs.xfs -f -L "$LABEL" "$PART"
+case "$DISK_TYPE" in
+  swap)
+    echo "start=2048, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F, name=$LABEL" | sfdisk --label gpt "$DEVICE"
+    udevadm settle
+    PART="/dev/disk/by-partlabel/$LABEL"
+    mkswap -L "$LABEL" "$PART"
+    ;;
+  *)
+    echo "start=2048, name=$LABEL" | sfdisk --label gpt "$DEVICE"
+    udevadm settle
+    PART="/dev/disk/by-partlabel/$LABEL"
+    mkfs.xfs -f -L "$LABEL" "$PART"
+    ;;
+esac

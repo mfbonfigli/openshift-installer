@@ -73,7 +73,7 @@ func ForDiskSetup(role, platform, device, label, path string, diskType types.Dis
 	label = reg.ReplaceAllString(label, "")
 
 	if platform == awstypes.Name {
-		if err := addAWSNVMeDiskSetup(&ignConfig, device, label, path); err != nil {
+		if err := addAWSNVMeDiskSetup(&ignConfig, device, label, path, diskType); err != nil {
 			return nil, err
 		}
 	} else {

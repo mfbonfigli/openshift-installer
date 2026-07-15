@@ -319,12 +319,9 @@ func ValidateNonRootVolumesDiskSetup(p *aws.MachinePool, pool *types.MachinePool
 				platformDiskID = setup.Etcd.PlatformDiskID
 			}
 		case types.Swap:
-			allErrs = append(allErrs, field.Invalid(
-				fldPath.Child("diskSetup").Index(i).Child("type"),
-				setup.Type,
-				"swap disk setup is not yet supported on AWS",
-			))
-			continue
+			if setup.Swap != nil {
+				platformDiskID = setup.Swap.PlatformDiskID
+			}
 		case types.UserDefined:
 			allErrs = append(allErrs, field.Invalid(
 				fldPath.Child("diskSetup").Index(i).Child("type"),

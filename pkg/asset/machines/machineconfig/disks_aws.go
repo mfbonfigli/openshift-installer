@@ -12,6 +12,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/openshift/installer/data"
+	"github.com/openshift/installer/pkg/types"
 )
 
 const awsNVMeSetupScriptPath = "machineconfig/aws-nvme-disk-setup.sh"
@@ -25,7 +26,7 @@ Before={{.BeforeUnit}}
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/aws-nvme-disk-setup.sh {{.TargetBdev}} {{.Label}}
+ExecStart=/usr/local/bin/aws-nvme-disk-setup.sh {{.TargetBdev}} {{.Label}} {{.DiskType}}
 
 [Install]
 RequiredBy={{.BeforeUnit}}
@@ -34,6 +35,7 @@ RequiredBy={{.BeforeUnit}}
 type awsSetupParams struct {
 	Label      string
 	TargetBdev string
+	DiskType   string
 	BeforeUnit string
 }
 
@@ -42,7 +44,7 @@ type awsSetupParams struct {
 // because /dev/sd* paths are not available during the initramfs stage on Nitro
 // instances — the script runs after udev settles and uses "nvme amzn id-ctrl"
 // to find the correct NVMe device by its block device mapping name.
-func addAWSNVMeDiskSetup(ignConfig *igntypes.Config, device, label, path string) error {
+func addAWSNVMeDiskSetup(ignConfig *igntypes.Config, device, label, path string, diskType types.DiskType) error {
 	scriptFile, err := data.Assets.Open(awsNVMeSetupScriptPath)
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", awsNVMeSetupScriptPath, err)
@@ -68,13 +70,20 @@ func addAWSNVMeDiskSetup(ignConfig *igntypes.Config, device, label, path string)
 
 	targetBdev := strings.TrimPrefix(device, "/dev/")
 
-	unitName := strings.Trim(path, "/")
-	unitName = strings.ReplaceAll(unitName, "/", "-")
-	beforeUnit := fmt.Sprintf("%s.mount", unitName)
+	var beforeUnit string
+	switch diskType {
+	case types.Etcd, types.UserDefined:
+		unitName := strings.Trim(path, "/")
+		unitName = strings.ReplaceAll(unitName, "/", "-")
+		beforeUnit = fmt.Sprintf("%s.mount", unitName)
+	case types.Swap:
+		beforeUnit = fmt.Sprintf("dev-disk-by\\x2dpartlabel-%s.swap", label)
+	}
 
 	params := awsSetupParams{
 		Label:      label,
 		TargetBdev: targetBdev,
+		DiskType:   string(diskType),
 		BeforeUnit: beforeUnit,
 	}
 	tmpl, err := template.New("awsSetup").Parse(awsSetupServiceTemplate)

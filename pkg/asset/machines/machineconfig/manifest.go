@@ -42,6 +42,18 @@ func Manifests(configs []*mcfgv1.MachineConfig, role, directory string) ([]*asse
 	return ret, nil
 }
 
+// KubeletConfigManifest creates a manifest file for a KubeletConfig object.
+func KubeletConfigManifest(kc *mcfgv1.KubeletConfig, directory string) (*asset.File, error) {
+	data, err := yaml.Marshal(kc)
+	if err != nil {
+		return nil, err
+	}
+	return &asset.File{
+		Filename: filepath.Join(directory, fmt.Sprintf(machineConfigFileName, kc.ObjectMeta.Name)),
+		Data:     data,
+	}, nil
+}
+
 // IsManifest tests whether the specified filename is a MachineConfig manifest.
 func IsManifest(filename string) (bool, error) {
 	matched, err := filepath.Match(machineConfigFileNamePattern, filename)

@@ -683,6 +683,23 @@ func (m *Master) Generate(ctx context.Context, dependencies asset.Parents) error
 		return errors.Wrap(err, "failed to create MachineConfig manifests for master machines")
 	}
 
+	if installConfig.Config.Enabled(features.FeatureGateMultiDiskSetup) {
+		for _, diskSetup := range installConfig.Config.ControlPlane.DiskSetup {
+			if diskSetup.Type == types.Swap {
+				kubeletCfg, err := machineconfig.ForSwapEnabled("master")
+				if err != nil {
+					return errors.Wrap(err, "failed to create kubelet config for swap on control plane")
+				}
+				kubeletManifest, err := machineconfig.KubeletConfigManifest(kubeletCfg, directory)
+				if err != nil {
+					return errors.Wrap(err, "failed to marshal kubelet config manifest for control plane")
+				}
+				m.MachineConfigFiles = append(m.MachineConfigFiles, kubeletManifest)
+				break
+			}
+		}
+	}
+
 	m.MachineFiles = make([]*asset.File, len(machines))
 	if controlPlaneMachineSet != nil && *pool.Replicas > 1 {
 		data, err := yaml.Marshal(controlPlaneMachineSet)
