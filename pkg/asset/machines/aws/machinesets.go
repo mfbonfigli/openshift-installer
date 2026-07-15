@@ -103,6 +103,7 @@ func MachineSets(in *MachineSetInput) ([]*machineapi.MachineSet, error) {
 			userDataSecret:   in.UserDataSecret,
 			instanceProfile:  instanceProfile,
 			root:             &mpool.EC2RootVolume,
+			nonRootVolumes:   mpool.NonRootVolumes,
 			imds:             mpool.EC2Metadata,
 			userTags:         in.InstallConfigPlatformAWS.UserTags,
 			publicSubnet:     publicSubnet,

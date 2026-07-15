@@ -631,7 +631,7 @@ func (m *Master) Generate(ctx context.Context, dependencies asset.Parents) error
 			case types.Etcd:
 				diskName = diskSetup.Etcd.PlatformDiskID
 			case types.Swap:
-				diskName = diskSetup.Etcd.PlatformDiskID
+				diskName = diskSetup.Swap.PlatformDiskID
 			case types.UserDefined:
 				diskName = diskSetup.UserDefined.PlatformDiskID
 			default:
@@ -645,6 +645,13 @@ func (m *Master) Generate(ctx context.Context, dependencies asset.Parents) error
 
 				if i < len(azureControlPlaneMachinePool.DataDisks) {
 					dataDisk = azureControlPlaneMachinePool.DataDisks[i]
+				}
+			case awstypes.Name:
+				for _, vol := range ic.ControlPlane.Platform.AWS.NonRootVolumes {
+					if vol.DeviceName == diskName {
+						dataDisk = vol
+						break
+					}
 				}
 			case vspheretypes.Name:
 				vsphereControlPlaneMachinePool := ic.ControlPlane.Platform.VSphere

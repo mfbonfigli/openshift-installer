@@ -2,6 +2,7 @@ package validation
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -70,6 +71,7 @@ func ValidateMachinePool(platform *aws.Platform, p *aws.MachinePool, poolName st
 	allErrs = append(allErrs, validateSecurityGroups(platform, p, fldPath)...)
 	allErrs = append(allErrs, ValidateCPUOptions(p, fldPath)...)
 	allErrs = append(allErrs, validateHostPlacement(p, poolName, fldPath.Child("hostPlacement"))...)
+	allErrs = append(allErrs, validateNonRootVolumes(p, poolName, fldPath.Child("nonRootVolumes"))...)
 
 	return allErrs
 }
@@ -217,6 +219,133 @@ func validateThroughput(p *aws.MachinePool, fldPath *field.Path) field.ErrorList
 		}
 	default:
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("throughput"), throughput, fmt.Sprintf("throughput not supported for type %s", volumeType)))
+	}
+
+	return allErrs
+}
+
+// validDeviceNamePattern restricts device names to the /dev/xvd[b-z] form.
+// This single convention works across both AWS hypervisor generations:
+// on Nitro instances AWS populates the NVMe controller bdev field with
+// the xvd-prefixed name; on Xen instances the device appears directly
+// at that path.
+var validDeviceNamePattern = regexp.MustCompile(`^/dev/xvd[b-z]$`)
+
+var validVolumeTypes = sets.NewString("gp2", "gp3", "io1", "io2", "st1", "sc1", "standard")
+
+var rootDeviceNames = sets.NewString("/dev/xvda")
+
+func validateNonRootVolumes(p *aws.MachinePool, poolName string, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	if len(p.NonRootVolumes) == 0 {
+		return allErrs
+	}
+
+	if poolName != types.MachinePoolControlPlaneRoleName {
+		allErrs = append(allErrs, field.Invalid(fldPath, p.NonRootVolumes, "nonRootVolumes are only supported on the control plane machine pool"))
+		return allErrs
+	}
+
+	deviceNames := sets.NewString()
+	for i, vol := range p.NonRootVolumes {
+		volPath := fldPath.Index(i)
+
+		if vol.DeviceName == "" {
+			allErrs = append(allErrs, field.Required(volPath.Child("deviceName"), "device name is required"))
+		} else if rootDeviceNames.Has(vol.DeviceName) {
+			allErrs = append(allErrs, field.Invalid(volPath.Child("deviceName"), vol.DeviceName, "must not conflict with the root device"))
+		} else if !validDeviceNamePattern.MatchString(vol.DeviceName) {
+			allErrs = append(allErrs, field.Invalid(volPath.Child("deviceName"), vol.DeviceName, "must match /dev/xvd[b-z]"))
+		} else if deviceNames.Has(vol.DeviceName) {
+			allErrs = append(allErrs, field.Invalid(volPath.Child("deviceName"), vol.DeviceName, "device name must be unique across all non-root volumes"))
+		} else {
+			deviceNames.Insert(vol.DeviceName)
+		}
+
+		if vol.Size <= 0 {
+			allErrs = append(allErrs, field.Invalid(volPath.Child("size"), vol.Size, "must be greater than zero"))
+		}
+
+		volType := strings.ToLower(vol.Type)
+		if vol.Type == "" {
+			allErrs = append(allErrs, field.Required(volPath.Child("type"), "volume type is required"))
+		} else if !validVolumeTypes.Has(volType) {
+			allErrs = append(allErrs, field.NotSupported(volPath.Child("type"), vol.Type, validVolumeTypes.List()))
+		} else {
+			switch volType {
+			case "io1", "io2", "gp3":
+				if vol.IOPS < 0 {
+					allErrs = append(allErrs, field.Invalid(volPath.Child("iops"), vol.IOPS, "iops must be a positive number"))
+				}
+			default:
+				if vol.IOPS != 0 {
+					allErrs = append(allErrs, field.Invalid(volPath.Child("iops"), vol.IOPS, fmt.Sprintf("iops not supported for type %s", volType)))
+				}
+			}
+
+			if vol.Throughput != nil {
+				if volType != "gp3" {
+					allErrs = append(allErrs, field.Invalid(volPath.Child("throughput"), *vol.Throughput, fmt.Sprintf("throughput not supported for type %s", volType)))
+				} else if *vol.Throughput < 125 || *vol.Throughput > 2000 {
+					allErrs = append(allErrs, field.Invalid(volPath.Child("throughput"), *vol.Throughput, "throughput must be between 125 MiB/s and 2000 MiB/s"))
+				}
+			}
+		}
+	}
+
+	return allErrs
+}
+
+// ValidateNonRootVolumesDiskSetup cross-validates the platform-specific NonRootVolumes
+// with the platform-agnostic DiskSetup entries.
+func ValidateNonRootVolumesDiskSetup(p *aws.MachinePool, pool *types.MachinePool, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	if len(p.NonRootVolumes) == 0 || len(pool.DiskSetup) == 0 {
+		return allErrs
+	}
+
+	if len(p.NonRootVolumes) < len(pool.DiskSetup) {
+		allErrs = append(allErrs, field.TooLong(fldPath, pool.DiskSetup, len(p.NonRootVolumes)))
+		return allErrs
+	}
+
+	deviceNameSet := sets.NewString()
+	for _, vol := range p.NonRootVolumes {
+		deviceNameSet.Insert(vol.DeviceName)
+	}
+
+	for i, setup := range pool.DiskSetup {
+		var platformDiskID string
+		switch setup.Type {
+		case types.Etcd:
+			if setup.Etcd != nil {
+				platformDiskID = setup.Etcd.PlatformDiskID
+			}
+		case types.Swap:
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("diskSetup").Index(i).Child("type"),
+				setup.Type,
+				"swap disk setup is not yet supported on AWS",
+			))
+			continue
+		case types.UserDefined:
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("diskSetup").Index(i).Child("type"),
+				setup.Type,
+				"userDefined disk setup is not supported on AWS",
+			))
+			continue
+		}
+
+		if platformDiskID != "" && !deviceNameSet.Has(platformDiskID) {
+			allErrs = append(allErrs, field.Invalid(
+				fldPath.Child("diskSetup").Index(i).Child("platformDiskID"),
+				platformDiskID,
+				"must match a nonRootVolumes[].deviceName",
+			))
+		}
 	}
 
 	return allErrs

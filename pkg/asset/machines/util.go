@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/installer/pkg/asset/machines/machineconfig"
 	"github.com/openshift/installer/pkg/asset/machines/vsphere"
 	"github.com/openshift/installer/pkg/types"
+	awstypes "github.com/openshift/installer/pkg/types/aws"
 	azuretypes "github.com/openshift/installer/pkg/types/azure"
 	vspheretypes "github.com/openshift/installer/pkg/types/vsphere"
 )
@@ -44,7 +45,7 @@ func NodeDiskSetup(installConfig *installconfig.InstallConfig, role string, disk
 		if installConfig.Config.Enabled(features.FeatureGateAzureMultiDisk) {
 			if azureDataDisk, ok := dataDisk.(v1beta1.DataDisk); ok {
 				device := fmt.Sprintf("/dev/disk/azure/scsi1/lun%d", *azureDataDisk.Lun)
-				diskSetupIgn, err := machineconfig.ForDiskSetup(role, device, label, path, diskSetup.Type)
+				diskSetupIgn, err := machineconfig.ForDiskSetup(role, azuretypes.Name, device, label, path, diskSetup.Type)
 				if err != nil {
 					return nil, errors.Wrap(err, "failed to create ignition to setup disks for master machines")
 				}
@@ -52,13 +53,24 @@ func NodeDiskSetup(installConfig *installconfig.InstallConfig, role string, disk
 			}
 			return nil, errors.Errorf("unsupported azure data disk type")
 		}
+	case awstypes.Name:
+		if installConfig.Config.Enabled(features.FeatureGateAWSMultiDisk) {
+			if awsVol, ok := dataDisk.(awstypes.EC2NonRootVolume); ok {
+				diskSetupIgn, err := machineconfig.ForDiskSetup(role, awstypes.Name, awsVol.DeviceName, label, path, diskSetup.Type)
+				if err != nil {
+					return nil, errors.Wrap(err, "failed to create ignition to setup disks for machines")
+				}
+				return diskSetupIgn, nil
+			}
+			return nil, errors.Errorf("unsupported aws data volume type")
+		}
 	case vspheretypes.Name:
 		if installConfig.Config.Enabled(features.FeatureGateVSphereMultiDisk) {
 			if vsphereDataDisk, ok := dataDisk.(vsphere.DiskInfo); ok {
 				// We need to find the index of the datadisk in the array.  Each disk is added in order to the VM so
 				// we'll map to that location.  First disk is OS disk so add 1 to index for scsi location
 				device := fmt.Sprintf(VsphereScsiByPath, vsphereDataDisk.Index+1)
-				diskSetupIgn, err := machineconfig.ForDiskSetup(role, device, label, path, diskSetup.Type)
+				diskSetupIgn, err := machineconfig.ForDiskSetup(role, vspheretypes.Name, device, label, path, diskSetup.Type)
 				if err != nil {
 					return nil, errors.Wrap(err, "failed to create ignition to setup disks for master machines")
 				}

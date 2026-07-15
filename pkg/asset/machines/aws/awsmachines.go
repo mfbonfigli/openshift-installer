@@ -48,6 +48,7 @@ type CAPIMachineSpecInput struct {
 	PublicIP                   bool
 	Tags                       capa.Tags
 	EC2RootVolume              awstypes.EC2RootVolume
+	NonRootVolumes             []awstypes.EC2NonRootVolume
 	KMSKeyARN                  string
 	IMDS                       capa.HTTPTokensState
 	SecurityGroups             []capa.AWSResourceReference
@@ -84,6 +85,24 @@ func GenerateCAPIMachineSpec(in *CAPIMachineSpecInput) capa.AWSMachineSpec {
 
 	if throughput := in.EC2RootVolume.Throughput; throughput != nil {
 		spec.RootVolume.Throughput = ptr.To(int64(*throughput))
+	}
+
+	for _, vol := range in.NonRootVolumes {
+		nrv := capa.Volume{
+			DeviceName:    vol.DeviceName,
+			Size:          int64(vol.Size),
+			Type:          capa.VolumeType(vol.Type),
+			IOPS:          int64(vol.IOPS),
+			Encrypted:     ptr.To(true),
+			EncryptionKey: in.KMSKeyARN,
+		}
+		if vol.Throughput != nil {
+			nrv.Throughput = ptr.To(int64(*vol.Throughput))
+		}
+		if vol.KMSKeyARN != "" {
+			nrv.EncryptionKey = vol.KMSKeyARN
+		}
+		spec.NonRootVolumes = append(spec.NonRootVolumes, nrv)
 	}
 
 	spec.AdditionalSecurityGroups = append(spec.AdditionalSecurityGroups, in.SecurityGroups...)
@@ -196,6 +215,7 @@ func GenerateMachines(clusterID string, in *MachineInput) ([]*asset.RuntimeFile,
 				PublicIP:                   in.PublicIP,
 				Tags:                       in.Tags,
 				EC2RootVolume:              mpool.EC2RootVolume,
+				NonRootVolumes:             mpool.NonRootVolumes,
 				KMSKeyARN:                  mpool.KMSKeyARN,
 				IMDS:                       imds,
 				AdditionalSecurityGroupIDs: mpool.AdditionalSecurityGroupIDs,

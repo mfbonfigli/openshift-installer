@@ -13,6 +13,14 @@ import (
 	"github.com/openshift/installer/pkg/types/aws"
 )
 
+func validNonRootVolume() aws.EC2NonRootVolume {
+	return aws.EC2NonRootVolume{
+		DeviceName: "/dev/xvdb",
+		Size:       100,
+		Type:       "gp3",
+	}
+}
+
 func TestValidateMachinePool(t *testing.T) {
 	platform := &aws.Platform{Region: "us-east-1"}
 	cases := []struct {
@@ -558,6 +566,327 @@ func Test_validateCPUOptions(t *testing.T) {
 				assert.NoError(t, err)
 			} else {
 				assert.Regexp(t, tc.err, err)
+			}
+		})
+	}
+}
+
+func TestValidateNonRootVolumes(t *testing.T) {
+	platform := &aws.Platform{Region: "us-east-1"}
+	cases := []struct {
+		name     string
+		pool     *aws.MachinePool
+		poolName string
+		expected string
+	}{
+		{
+			name: "valid single non-root volume",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{validNonRootVolume()},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+		},
+		{
+			name: "valid multiple non-root volumes",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "gp3"},
+					{DeviceName: "/dev/xvdc", Size: 200, Type: "io1", IOPS: 5000},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+		},
+		{
+			name: "valid xvd device name",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "gp3"},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+		},
+		{
+			name: "missing device name",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{Size: 100, Type: "gp3"},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `deviceName.*Required`,
+		},
+		{
+			name: "invalid device name pattern - nvme path not allowed",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/nvme0n1", Size: 100, Type: "gp3"},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `must match /dev/xvd\[b-z\]`,
+		},
+		{
+			name: "invalid device name pattern - sd prefix not allowed",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/sdb", Size: 100, Type: "gp3"},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `must match /dev/xvd\[b-z\]`,
+		},
+		{
+			name: "root device name xvda",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvda", Size: 100, Type: "gp3"},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `must not conflict with the root device`,
+		},
+		{
+			name: "root device name xvda",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvda", Size: 100, Type: "gp3"},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `must not conflict with the root device`,
+		},
+		{
+			name: "duplicate device names",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "gp3"},
+					{DeviceName: "/dev/xvdb", Size: 200, Type: "gp3"},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `device name must be unique`,
+		},
+		{
+			name: "zero size",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 0, Type: "gp3"},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `must be greater than zero`,
+		},
+		{
+			name: "negative size",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: -1, Type: "gp3"},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `must be greater than zero`,
+		},
+		{
+			name: "missing volume type",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `type.*Required`,
+		},
+		{
+			name: "invalid volume type",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "invalid"},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `Unsupported value`,
+		},
+		{
+			name: "iops not supported for gp2",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "gp2", IOPS: 3000},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `iops not supported for type gp2`,
+		},
+		{
+			name: "throughput not supported for io1",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "io1", IOPS: 3000, Throughput: ptr.To(int32(500))},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `throughput not supported for type io1`,
+		},
+		{
+			name: "throughput below minimum",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "gp3", Throughput: ptr.To(int32(50))},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `throughput must be between 125 MiB/s and 2000 MiB/s`,
+		},
+		{
+			name: "throughput above maximum",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "gp3", Throughput: ptr.To(int32(3000))},
+				},
+			},
+			poolName: types.MachinePoolControlPlaneRoleName,
+			expected: `throughput must be between 125 MiB/s and 2000 MiB/s`,
+		},
+		{
+			name: "rejected on default machine pool",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{validNonRootVolume()},
+			},
+			poolName: "",
+			expected: `only supported on the control plane`,
+		},
+		{
+			name: "rejected on compute pool",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{validNonRootVolume()},
+			},
+			poolName: types.MachinePoolComputeRoleName,
+			expected: `only supported on the control plane`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateMachinePool(platform, tc.pool, tc.poolName, field.NewPath("test-path")).ToAggregate()
+			if tc.expected == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.Regexp(t, tc.expected, err)
+			}
+		})
+	}
+}
+
+func TestValidateNonRootVolumesDiskSetup(t *testing.T) {
+	cases := []struct {
+		name     string
+		pool     *aws.MachinePool
+		mpool    *types.MachinePool
+		expected string
+	}{
+		{
+			name: "valid matching etcd disk setup",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "gp3"},
+				},
+			},
+			mpool: &types.MachinePool{
+				DiskSetup: []types.Disk{
+					{
+						Type: types.Etcd,
+						Etcd: &types.DiskEtcd{PlatformDiskID: "/dev/xvdb"},
+					},
+				},
+			},
+		},
+		{
+			name: "swap disk setup not supported on AWS",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdc", Size: 64, Type: "gp3"},
+				},
+			},
+			mpool: &types.MachinePool{
+				DiskSetup: []types.Disk{
+					{
+						Type: types.Swap,
+						Swap: &types.DiskSwap{PlatformDiskID: "/dev/xvdc"},
+					},
+				},
+			},
+			expected: `swap disk setup is not yet supported on AWS`,
+		},
+		{
+			name: "mismatched platformDiskID",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "gp3"},
+				},
+			},
+			mpool: &types.MachinePool{
+				DiskSetup: []types.Disk{
+					{
+						Type: types.Etcd,
+						Etcd: &types.DiskEtcd{PlatformDiskID: "/dev/xvdc"},
+					},
+				},
+			},
+			expected: `must match a nonRootVolumes\[\]\.deviceName`,
+		},
+		{
+			name: "more disk setups than non-root volumes",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "gp3"},
+				},
+			},
+			mpool: &types.MachinePool{
+				DiskSetup: []types.Disk{
+					{
+						Type: types.Etcd,
+						Etcd: &types.DiskEtcd{PlatformDiskID: "/dev/xvdb"},
+					},
+					{
+						Type: types.Swap,
+						Swap: &types.DiskSwap{PlatformDiskID: "/dev/xvdc"},
+					},
+				},
+			},
+			expected: `Too long`,
+		},
+		{
+			name: "userDefined disk setup rejected",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "gp3"},
+				},
+			},
+			mpool: &types.MachinePool{
+				DiskSetup: []types.Disk{
+					{
+						Type:        types.UserDefined,
+						UserDefined: &types.DiskUserDefined{PlatformDiskID: "/dev/xvdb", MountPath: "/data"},
+					},
+				},
+			},
+			expected: `userDefined disk setup is not supported on AWS`,
+		},
+		{
+			name: "no disk setup - no error",
+			pool: &aws.MachinePool{
+				NonRootVolumes: []aws.EC2NonRootVolume{
+					{DeviceName: "/dev/xvdb", Size: 100, Type: "gp3"},
+				},
+			},
+			mpool: &types.MachinePool{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateNonRootVolumesDiskSetup(tc.pool, tc.mpool, field.NewPath("test-path")).ToAggregate()
+			if tc.expected == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.Regexp(t, tc.expected, err)
 			}
 		})
 	}

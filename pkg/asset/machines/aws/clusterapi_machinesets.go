@@ -114,6 +114,7 @@ func ClusterAPIMachineSets(in *MachineSetInput) ([]capa.AWSMachineTemplate, []ca
 						PublicIP:           publicSubnet,
 						Tags:               tags,
 						EC2RootVolume:      mpool.EC2RootVolume,
+						NonRootVolumes:     mpool.NonRootVolumes,
 						KMSKeyARN:          mpool.KMSKeyARN,
 						IMDS:               imds,
 						SecurityGroups: []capa.AWSResourceReference{

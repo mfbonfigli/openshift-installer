@@ -64,6 +64,15 @@ type MachinePool struct {
 	// +openshift:enable:FeatureGate=AWSDedicatedHosts
 	// +optional
 	HostPlacement *HostPlacement `json:"hostPlacement,omitempty"`
+
+	// nonRootVolumes defines additional EBS volumes to attach to EC2 instances in the machine pool.
+	// Each volume requires a device name (e.g. /dev/sdf) that must be unique across all non-root volumes.
+	// Used together with the platform-agnostic diskSetup field to configure dedicated storage for
+	// specific purposes such as etcd data isolation.
+	//
+	// +openshift:enable:FeatureGate=AWSMultiDisk
+	// +optional
+	NonRootVolumes []EC2NonRootVolume `json:"nonRootVolumes,omitempty"`
 }
 
 // Set sets the values from `required` to `a`.
@@ -123,6 +132,10 @@ func (a *MachinePool) Set(required *MachinePool) {
 	if required.HostPlacement != nil {
 		a.HostPlacement = required.HostPlacement
 	}
+
+	if len(required.NonRootVolumes) > 0 {
+		a.NonRootVolumes = required.NonRootVolumes
+	}
 }
 
 // EC2RootVolume defines the storage for an ec2 instance.
@@ -158,6 +171,45 @@ type EC2RootVolume struct {
 
 	// The KMS key that will be used to encrypt the EBS volume.
 	// If no key is provided the default KMS key for the account will be used.
+	// https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_GetEbsDefaultKmsKeyId.html
+	// +optional
+	KMSKeyARN string `json:"kmsKeyARN,omitempty"`
+}
+
+// EC2NonRootVolume defines an additional EBS volume to attach to an EC2 instance.
+type EC2NonRootVolume struct {
+	// deviceName is the device name exposed to the instance (e.g. /dev/sdf).
+	// Must be unique across all non-root volumes and must not conflict with the root device.
+	// See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/device_naming.html
+	// +required
+	DeviceName string `json:"deviceName"`
+
+	// size defines the size of the volume in gibibytes (GiB).
+	//
+	// +kubebuilder:validation:Minimum=1
+	// +required
+	Size int `json:"size"`
+
+	// type defines the type of the volume.
+	// +required
+	Type string `json:"type"`
+
+	// iops defines the amount of provisioned IOPS. Only valid for io1, io2, and gp3 volume types.
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	IOPS int `json:"iops,omitempty"`
+
+	// throughput to provision in MiB/s. Only valid for gp3 volumes.
+	// Valid Range: Minimum value of 125. Maximum value of 2000.
+	//
+	// +kubebuilder:validation:Minimum=125
+	// +kubebuilder:validation:Maximum=2000
+	// +optional
+	Throughput *int32 `json:"throughput,omitempty"`
+
+	// kmsKeyARN is the KMS key to encrypt the volume.
+	// If omitted, the default AWS KMS key for the account is used.
 	// https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_GetEbsDefaultKmsKeyId.html
 	// +optional
 	KMSKeyARN string `json:"kmsKeyARN,omitempty"`
