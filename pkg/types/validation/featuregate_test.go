@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"k8s.io/utils/ptr"
 	capz "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 
 	v1 "github.com/openshift/api/config/v1"
@@ -11,6 +12,28 @@ import (
 	"github.com/openshift/installer/pkg/types/azure"
 	"github.com/openshift/installer/pkg/types/vsphere"
 )
+
+func etcdDiskSetup() []types.Disk {
+	return []types.Disk{{
+		Type: types.Etcd,
+		Etcd: &types.DiskEtcd{PlatformDiskID: "etcd"},
+	}}
+}
+
+func userDefinedDiskSetup() []types.Disk {
+	return []types.Disk{{
+		Type:        types.UserDefined,
+		UserDefined: &types.DiskUserDefined{PlatformDiskID: "userdisk", MountPath: "/mnt/data"},
+	}}
+}
+
+func azureDataDisks() []capz.DataDisk {
+	return []capz.DataDisk{{
+		NameSuffix: "etcd",
+		DiskSizeGB: 100,
+		Lun:        ptr.To(int32(0)),
+	}}
+}
 
 func TestFeatureGates(t *testing.T) {
 	cases := []struct {
@@ -312,6 +335,76 @@ func TestFeatureGates(t *testing.T) {
 				return c
 			}(),
 			expected: `^\Qcompute[0].management: Forbidden: this field is protected by the ClusterAPIMachineManagementAWS feature gate which must be enabled through either the TechPreviewNoUpgrade or CustomNoUpgrade feature set\E$`,
+		},
+		{
+			name: "Azure control plane diskSetup is allowed with the Default Feature Set",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.Azure = validAzurePlatform()
+				c.ControlPlane.DiskSetup = etcdDiskSetup()
+				return c
+			}(),
+		},
+		{
+			name: "Azure compute diskSetup is allowed with the Default Feature Set",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.Azure = validAzurePlatform()
+				c.Compute[0].DiskSetup = userDefinedDiskSetup()
+				return c
+			}(),
+		},
+		{
+			name: "Azure control plane dataDisks are allowed with the Default Feature Set",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.Azure = validAzurePlatform()
+				c.ControlPlane.Platform.Azure = &azure.MachinePool{DataDisks: azureDataDisks()}
+				return c
+			}(),
+		},
+		{
+			name: "Azure compute dataDisks are allowed with the Default Feature Set",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.Azure = validAzurePlatform()
+				c.Compute[0].Platform.Azure = &azure.MachinePool{DataDisks: azureDataDisks()}
+				return c
+			}(),
+		},
+		{
+			name: "Azure defaultMachinePlatform dataDisks are allowed with the Default Feature Set",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.Azure = validAzurePlatform()
+				c.Azure.DefaultMachinePlatform = &azure.MachinePool{DataDisks: azureDataDisks()}
+				return c
+			}(),
+		},
+		{
+			name: "vSphere control plane diskSetup is allowed with the Default Feature Set",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.VSphere = validVSpherePlatform()
+				c.ControlPlane.DiskSetup = etcdDiskSetup()
+				return c
+			}(),
+		},
+		{
+			name: "vSphere compute diskSetup is allowed with the Default Feature Set",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.VSphere = validVSpherePlatform()
+				c.Compute[0].DiskSetup = userDefinedDiskSetup()
+				return c
+			}(),
 		},
 		{
 			name: "Edge compute CAPI machine management is not allowed with the Default Feature Set",
