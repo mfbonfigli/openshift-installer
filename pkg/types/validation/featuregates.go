@@ -12,6 +12,9 @@ import (
 // validateMachinePoolFeatureGates determines all of the install config fields that should
 // be validated to ensure that the proper featuregate is enabled when the field is used.
 func validateMachinePoolFeatureGates(c *types.InstallConfig) []featuregates.GatedInstallConfigFeature {
+	// The feature gate guarding diskSetup depends on the platform.
+	diskSetupFeatureGate := featuregates.DiskSetupFeatureGate(c.Platform.Name())
+
 	return []featuregates.GatedInstallConfigFeature{
 		{
 			FeatureGateName: features.FeatureGateDualReplica,
@@ -19,12 +22,12 @@ func validateMachinePoolFeatureGates(c *types.InstallConfig) []featuregates.Gate
 			Field:           field.NewPath("platform", "none", "fencingCredentials"),
 		},
 		{
-			FeatureGateName: features.FeatureGateMultiDiskSetup,
+			FeatureGateName: diskSetupFeatureGate,
 			Condition:       c.ControlPlane != nil && len(c.ControlPlane.DiskSetup) != 0,
 			Field:           field.NewPath("controlPlane", "diskSetup"),
 		},
 		{
-			FeatureGateName: features.FeatureGateMultiDiskSetup,
+			FeatureGateName: diskSetupFeatureGate,
 			Condition: func() bool {
 				computeMachinePool := c.Compute
 				for _, compute := range computeMachinePool {

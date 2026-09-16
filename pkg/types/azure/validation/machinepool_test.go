@@ -89,6 +89,55 @@ func TestValidateMachinePool(t *testing.T) {
 			expected: `^test-path\.diskType: Unsupported value: "LRS": supported values: "Premium_LRS", "StandardSSD_LRS", "Standard_LRS"$`,
 		},
 		{
+			name:          "disk setup without any data disk",
+			azurePlatform: azure.PublicCloud,
+			pool: &types.MachinePool{
+				Name: "master",
+				DiskSetup: []types.Disk{{
+					Type: "etcd",
+					Etcd: &types.DiskEtcd{
+						PlatformDiskID: "etcd",
+					},
+				}},
+				Platform: types.MachinePoolPlatform{
+					Azure: &azure.MachinePool{},
+				},
+			},
+			expected: `^test-path\.dataDisks: Invalid value: 0: must define at least one data disk per diskSetup entry, 1 diskSetup entries are configured$`,
+		},
+		{
+			name:          "fewer data disks than disk setup entries",
+			azurePlatform: azure.PublicCloud,
+			pool: &types.MachinePool{
+				Name: "master",
+				DiskSetup: []types.Disk{
+					{
+						Type: "etcd",
+						Etcd: &types.DiskEtcd{
+							PlatformDiskID: "etcd",
+						},
+					},
+					{
+						Type: "user-defined",
+						UserDefined: &types.DiskUserDefined{
+							PlatformDiskID: "userdisk",
+							MountPath:      "/mnt/data",
+						},
+					},
+				},
+				Platform: types.MachinePoolPlatform{
+					Azure: &azure.MachinePool{
+						DataDisks: []capz.DataDisk{{
+							NameSuffix: "etcd",
+							DiskSizeGB: 1,
+							Lun:        ptr.To(int32(0)),
+						}},
+					},
+				},
+			},
+			expected: `^test-path\.dataDisks: Invalid value: 1: must define at least one data disk per diskSetup entry, 2 diskSetup entries are configured$`,
+		},
+		{
 			name:          "multiple disk and setup missing lun id",
 			azurePlatform: azure.PublicCloud,
 			pool: &types.MachinePool{

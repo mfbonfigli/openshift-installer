@@ -132,10 +132,8 @@ func ValidateMachinePool(p *azure.MachinePool, poolName string, platform *azure.
 		}
 	}
 
-	if pool != nil {
-		if len(p.DataDisks) != 0 && len(pool.DiskSetup) != 0 {
-			allErrs = append(allErrs, validateDataDiskSetup(p, pool, fldPath.Child("dataDisks"))...)
-		}
+	if pool != nil && len(pool.DiskSetup) != 0 {
+		allErrs = append(allErrs, validateDataDiskSetup(p, pool, fldPath.Child("dataDisks"))...)
 	}
 
 	allErrs = append(allErrs, validateOSImage(p, fldPath)...)
@@ -151,7 +149,8 @@ func validateDataDiskSetup(azurePool *azure.MachinePool, pool *types.MachinePool
 	// defined but no corresponding disk setup but we should never have
 	// more DiskSetup than DataDisks
 	if len(azurePool.DataDisks) < len(pool.DiskSetup) {
-		allErrs = append(allErrs, field.TooLong(fldPath, pool.DiskSetup, len(azurePool.DataDisks)))
+		allErrs = append(allErrs, field.Invalid(fldPath, len(azurePool.DataDisks),
+			fmt.Sprintf("must define at least one data disk per diskSetup entry, %d diskSetup entries are configured", len(pool.DiskSetup))))
 		// return early if disksetup and datadisks don't match lengths
 		return allErrs
 	}

@@ -12,6 +12,20 @@ import (
 	"github.com/openshift/installer/pkg/types/vsphere"
 )
 
+func etcdDiskSetup() []types.Disk {
+	return []types.Disk{{
+		Type: types.Etcd,
+		Etcd: &types.DiskEtcd{PlatformDiskID: "etcd"},
+	}}
+}
+
+func userDefinedDiskSetup() []types.Disk {
+	return []types.Disk{{
+		Type:        types.UserDefined,
+		UserDefined: &types.DiskUserDefined{PlatformDiskID: "userdisk", MountPath: "/mnt/data"},
+	}}
+}
+
 func TestFeatureGates(t *testing.T) {
 	cases := []struct {
 		name          string
@@ -312,6 +326,94 @@ func TestFeatureGates(t *testing.T) {
 				return c
 			}(),
 			expected: `^\Qcompute[0].management: Forbidden: this field is protected by the ClusterAPIMachineManagementAWS feature gate which must be enabled through either the TechPreviewNoUpgrade or CustomNoUpgrade feature set\E$`,
+		},
+		{
+			name: "Azure control plane diskSetup is allowed by AzureMultiDisk alone",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.Azure = validAzurePlatform()
+				c.FeatureSet = v1.CustomNoUpgrade
+				c.FeatureGates = []string{"AzureMultiDisk=true", "MultiDiskSetup=false"}
+				c.ControlPlane.DiskSetup = etcdDiskSetup()
+				return c
+			}(),
+		},
+		{
+			name: "Azure control plane diskSetup is not allowed by MultiDiskSetup",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.Azure = validAzurePlatform()
+				c.FeatureSet = v1.CustomNoUpgrade
+				c.FeatureGates = []string{"AzureMultiDisk=false", "MultiDiskSetup=true"}
+				c.ControlPlane.DiskSetup = etcdDiskSetup()
+				return c
+			}(),
+			expected: `^controlPlane.diskSetup: Forbidden: this field is protected by the AzureMultiDisk feature gate`,
+		},
+		{
+			name: "Azure compute diskSetup is allowed by AzureMultiDisk alone",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.Azure = validAzurePlatform()
+				c.FeatureSet = v1.CustomNoUpgrade
+				c.FeatureGates = []string{"AzureMultiDisk=true", "MultiDiskSetup=false"}
+				c.Compute[0].DiskSetup = userDefinedDiskSetup()
+				return c
+			}(),
+		},
+		{
+			name: "Azure compute diskSetup is not allowed by MultiDiskSetup",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.Azure = validAzurePlatform()
+				c.FeatureSet = v1.CustomNoUpgrade
+				c.FeatureGates = []string{"AzureMultiDisk=false", "MultiDiskSetup=true"}
+				c.Compute[0].DiskSetup = userDefinedDiskSetup()
+				return c
+			}(),
+			expected: `^compute.diskSetup: Forbidden: this field is protected by the AzureMultiDisk feature gate`,
+		},
+		{
+			name: "vSphere control plane diskSetup is allowed by MultiDiskSetup alone",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.VSphere = validVSpherePlatform()
+				c.FeatureSet = v1.CustomNoUpgrade
+				c.FeatureGates = []string{"AzureMultiDisk=false", "MultiDiskSetup=true"}
+				c.ControlPlane.DiskSetup = etcdDiskSetup()
+				return c
+			}(),
+		},
+		{
+			name: "vSphere control plane diskSetup is not allowed by AzureMultiDisk",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.VSphere = validVSpherePlatform()
+				c.FeatureSet = v1.CustomNoUpgrade
+				c.FeatureGates = []string{"AzureMultiDisk=true", "MultiDiskSetup=false"}
+				c.ControlPlane.DiskSetup = etcdDiskSetup()
+				return c
+			}(),
+			expected: `^controlPlane.diskSetup: Forbidden: this field is protected by the MultiDiskSetup feature gate`,
+		},
+		{
+			name: "vSphere compute diskSetup is not allowed by AzureMultiDisk",
+			installConfig: func() *types.InstallConfig {
+				c := validInstallConfig()
+				c.AWS = nil // validInstallConfig defaults to AWS
+				c.VSphere = validVSpherePlatform()
+				c.FeatureSet = v1.CustomNoUpgrade
+				c.FeatureGates = []string{"AzureMultiDisk=true", "MultiDiskSetup=false"}
+				c.Compute[0].DiskSetup = userDefinedDiskSetup()
+				return c
+			}(),
+			expected: `^compute.diskSetup: Forbidden: this field is protected by the MultiDiskSetup feature gate`,
 		},
 		{
 			name: "Edge compute CAPI machine management is not allowed with the Default Feature Set",

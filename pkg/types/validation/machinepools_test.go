@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/pointer"
+	capz "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 
 	"github.com/openshift/installer/pkg/types"
 	"github.com/openshift/installer/pkg/types/aws"
@@ -22,6 +23,31 @@ func validMachinePool(name string) *types.MachinePool {
 		Hyperthreading: types.HyperthreadingDisabled,
 		Architecture:   types.ArchitectureAMD64,
 	}
+}
+
+// azureMachinePoolFor returns an Azure machine pool carrying one data disk per diskSetup
+// entry of the given pool, so that the pool satisfies the Azure data disk validation and the
+// test case can focus on the platform-agnostic diskSetup validation.
+func azureMachinePoolFor(p *types.MachinePool) *azure.MachinePool {
+	mpool := &azure.MachinePool{}
+	for i, ds := range p.DiskSetup {
+		lun := int32(i) //nolint:gosec // test data, never overflows
+		var nameSuffix string
+		switch {
+		case ds.Etcd != nil:
+			nameSuffix = ds.Etcd.PlatformDiskID
+		case ds.Swap != nil:
+			nameSuffix = ds.Swap.PlatformDiskID
+		case ds.UserDefined != nil:
+			nameSuffix = ds.UserDefined.PlatformDiskID
+		}
+		mpool.DataDisks = append(mpool.DataDisks, capz.DataDisk{
+			NameSuffix: nameSuffix,
+			DiskSizeGB: 100,
+			Lun:        &lun,
+		})
+	}
+	return mpool
 }
 
 // Cursor generated disk Setup tests
@@ -96,7 +122,7 @@ func TestValidateMachinePool(t *testing.T) {
 			pool: func() *types.MachinePool {
 				p := validMachinePool("test-name")
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -303,7 +329,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        nil,
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -321,7 +347,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        nil,
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -339,7 +365,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        nil,
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -357,7 +383,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        nil,
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -373,7 +399,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap: &types.DiskSwap{PlatformDiskID: "swap"},
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -391,7 +417,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        &types.DiskSwap{PlatformDiskID: "swap"},
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -409,7 +435,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        nil,
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -427,7 +453,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        nil,
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -445,7 +471,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        nil,
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -463,7 +489,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        nil,
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -487,7 +513,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        nil,
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -511,7 +537,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        &types.DiskSwap{PlatformDiskID: "swap2"},
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
@@ -535,7 +561,7 @@ func TestValidateMachinePool(t *testing.T) {
 					Swap:        nil,
 				})
 				p.Platform = types.MachinePoolPlatform{
-					Azure: &azure.MachinePool{},
+					Azure: azureMachinePoolFor(p),
 				}
 				return p
 			}(),
