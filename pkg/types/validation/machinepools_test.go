@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -361,7 +362,7 @@ func TestValidateMachinePool(t *testing.T) {
 				}
 				return p
 			}(),
-			expectedError: `^test-path\.diskSetup\.etcd: Invalid value: "etcd:\\n  platformDiskID: etcd\\ntype: etcd\\n": cannot specify etcd on worker machine pools$`,
+			expectedError: `^test-path\.diskSetup\[0\]\.etcd: Invalid value: "etcd:\\n  platformDiskID: etcd\\ntype: etcd\\n": cannot specify etcd on worker machine pools$`,
 		},
 		{
 			name:     "valid etcd disk on master machine pool",
@@ -382,6 +383,10 @@ func TestValidateMachinePool(t *testing.T) {
 			valid: true,
 		},
 		{
+			// The platform machine pool is left unset, following the convention
+			// for cases that cover rules holding for every platform: the Azure
+			// dataDisks built from a malformed entry would only add
+			// platform-side errors on top of the one under test.
 			name:     "invalid etcd disk with nil Etcd field",
 			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
 			pool: func() *types.MachinePool {
@@ -392,12 +397,9 @@ func TestValidateMachinePool(t *testing.T) {
 					Etcd:        nil,
 					Swap:        nil,
 				})
-				p.Platform = types.MachinePoolPlatform{
-					Azure: azurePoolForDiskSetup(p.DiskSetup),
-				}
 				return p
 			}(),
-			expectedError: `^test-path\.diskSetup\.etcd: Invalid value: "type: etcd\\n": etcd configuration must be created$`,
+			expectedError: `^test-path\.diskSetup\[0\]\.etcd: Invalid value: "type: etcd\\n": etcd configuration must be created$`,
 		},
 		{
 			name:     "invalid swap disk on master machine pool",
@@ -413,7 +415,7 @@ func TestValidateMachinePool(t *testing.T) {
 				}
 				return p
 			}(),
-			expectedError: `^test-path\.diskSetup\.swap: Invalid value: "swap:\\n  platformDiskID: swap\\ntype: swap\\n": swap is unsupported on control plane nodes$`,
+			expectedError: `^test-path\.diskSetup\[0\]\.swap: Invalid value: "swap:\\n  platformDiskID: swap\\ntype: swap\\n": swap is unsupported on control plane nodes$`,
 		},
 		{
 			name:     "valid swap disk",
@@ -444,12 +446,9 @@ func TestValidateMachinePool(t *testing.T) {
 					Etcd:        nil,
 					Swap:        nil,
 				})
-				p.Platform = types.MachinePoolPlatform{
-					Azure: azurePoolForDiskSetup(p.DiskSetup),
-				}
 				return p
 			}(),
-			expectedError: `^test-path\.diskSetup\.swap: Invalid value: "type: swap\\n": swap configuration must be created$`,
+			expectedError: `^test-path\.diskSetup\[0\]\.swap: Invalid value: "type: swap\\n": swap configuration must be created$`,
 		},
 		{
 			name:     "valid user-defined disk",
@@ -480,12 +479,9 @@ func TestValidateMachinePool(t *testing.T) {
 					Etcd:        nil,
 					Swap:        nil,
 				})
-				p.Platform = types.MachinePoolPlatform{
-					Azure: azurePoolForDiskSetup(p.DiskSetup),
-				}
 				return p
 			}(),
-			expectedError: `^test-path\.diskSetup\.userDefined\.platformDiskID: Invalid value: \"type: user-defined\\nuserDefined:\\n  mountPath: /mnt/data\\n  platformDiskID: userdiskuserdisk\\n": cannot be longer than 12 characters$`,
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.platformDiskID: Invalid value: \"type: user-defined\\nuserDefined:\\n  mountPath: /mnt/data\\n  platformDiskID: userdiskuserdisk\\n": cannot be longer than 12 characters$`,
 		},
 		{
 			name:     "invalid user-defined disk platformDiskID with no alphanumeric characters",
@@ -496,12 +492,9 @@ func TestValidateMachinePool(t *testing.T) {
 					Type:        "user-defined",
 					UserDefined: &types.DiskUserDefined{PlatformDiskID: "--", MountPath: "/mnt/data"},
 				})
-				p.Platform = types.MachinePoolPlatform{
-					Azure: azurePoolForDiskSetup(p.DiskSetup),
-				}
 				return p
 			}(),
-			expectedError: `^test-path\.diskSetup\.userDefined\.platformDiskID: Invalid value: "--": must contain at least one alphanumeric character$`,
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.platformDiskID: Invalid value: "--": must contain at least one alphanumeric character$`,
 		},
 		{
 			name:     "invalid user-defined disk with empty platformDiskID",
@@ -512,12 +505,9 @@ func TestValidateMachinePool(t *testing.T) {
 					Type:        "user-defined",
 					UserDefined: &types.DiskUserDefined{MountPath: "/mnt/data"},
 				})
-				p.Platform = types.MachinePoolPlatform{
-					Azure: azurePoolForDiskSetup(p.DiskSetup),
-				}
 				return p
 			}(),
-			expectedError: `^test-path\.diskSetup\.userDefined\.platformDiskID: Invalid value: "": must contain at least one alphanumeric character$`,
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.platformDiskID: Invalid value: "": must contain at least one alphanumeric character$`,
 		},
 		{
 			name:     "invalid user-defined disk with nil UserDefined field",
@@ -530,12 +520,9 @@ func TestValidateMachinePool(t *testing.T) {
 					Etcd:        nil,
 					Swap:        nil,
 				})
-				p.Platform = types.MachinePoolPlatform{
-					Azure: azurePoolForDiskSetup(p.DiskSetup),
-				}
 				return p
 			}(),
-			expectedError: `^test-path\.diskSetup\.userDefined: Invalid value: "type: user-defined\\n": userDefined configuration must be created$`,
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined: Invalid value: "type: user-defined\\n": userDefined configuration must be created$`,
 		},
 		{
 			// The cases from here to "valid distinct user-defined disks" cover rules
@@ -607,6 +594,252 @@ func TestValidateMachinePool(t *testing.T) {
 			expectedError: `^test-path\.diskSetup\[0\]\.type: Unsupported value: "": supported values: "etcd", "swap", "user-defined"$`,
 		},
 		{
+			name:     "invalid user-defined disk with empty mount path",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1"},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.mountPath: Required value: a mount path is required for user-defined disks$`,
+		},
+		{
+			name:     "invalid user-defined disk with relative mount path",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "data"},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.mountPath: Invalid value: "data": must be an absolute path$`,
+		},
+		{
+			name:     "invalid user-defined disk with root mount path",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "/"},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.mountPath: Invalid value: "/": a data disk cannot be mounted at the root filesystem$`,
+		},
+		{
+			name:     "invalid user-defined disk with non-normalized trailing slash",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "/data/"},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.mountPath: Invalid value: "/data/": must be a normalized path without trailing '/', '\.', '\.\.' or repeated '/' \(did you mean "/data"\?\)$`,
+		},
+		{
+			name:     "invalid user-defined disk with repeated slashes",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "//data"},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.mountPath: Invalid value: "//data": must be a normalized path without trailing '/', '\.', '\.\.' or repeated '/' \(did you mean "/data"\?\)$`,
+		},
+		{
+			name:     "invalid user-defined disk with parent-directory traversal",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "/a/../b"},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.mountPath: Invalid value: "/a/../b": must be a normalized path without trailing '/', '\.', '\.\.' or repeated '/' \(did you mean "/b"\?\)$`,
+		},
+		{
+			name:     "valid user-defined disk with hyphenated mount path",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "/var/lib/my-app"},
+				})
+				return p
+			}(),
+			valid: true,
+		},
+		{
+			// Errors about a single entry carry its index, so the user can tell
+			// which of several entries of the same type is at fault.
+			name:     "invalid mount path on the second of two user-defined disks",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup,
+					types.Disk{Type: types.UserDefined, UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "/data1"}},
+					types.Disk{Type: types.UserDefined, UserDefined: &types.DiskUserDefined{PlatformDiskID: "data2", MountPath: "data2"}},
+				)
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[1\]\.userDefined\.mountPath: Invalid value: "data2": must be an absolute path$`,
+		},
+		{
+			name:     "invalid user-defined disk with whitespace in mount path",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "/data disk"},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.mountPath: Invalid value: "/data disk": may only contain alphanumerics, '/', '\.', '_' and '-'$`,
+		},
+		{
+			// systemd expands "%" specifiers in Where=, which would then no
+			// longer match the unit name.
+			name:     "invalid user-defined disk with a systemd specifier in mount path",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "/data%n"},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.mountPath: Invalid value: "/data%n": may only contain alphanumerics, '/', '\.', '_' and '-'$`,
+		},
+		{
+			// A line break would start a new directive in the mount unit.
+			name:     "invalid user-defined disk with a line break in mount path",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "/data\nWhat=/dev/sda"},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.mountPath: Invalid value: "/data\\nWhat=/dev/sda": may only contain alphanumerics, '/', '\.', '_' and '-'$`,
+		},
+		{
+			// "/" plus 249 characters escapes to a 255-character unit name
+			// including the ".mount" suffix, the longest systemd loads.
+			name:     "valid user-defined disk with the longest mount path systemd can name",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "/" + strings.Repeat("a", 249)},
+				})
+				return p
+			}(),
+			valid: true,
+		},
+		{
+			// The limit applies to the escaped unit name, not the path: each "-"
+			// escapes to four characters, so this 141-character path names a
+			// 356-character unit.
+			name:     "invalid user-defined disk whose mount unit name is too long",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "/" + strings.Repeat("a-", 70)},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.userDefined\.mountPath: Invalid value: "/(a-){70}": is too long: the name of its systemd mount unit, "(a\\\\x2d){70}\.mount", exceeds the 255 characters systemd allows$`,
+		},
+		{
+			name:     "invalid duplicate user-defined mount paths",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup,
+					types.Disk{Type: types.UserDefined, UserDefined: &types.DiskUserDefined{PlatformDiskID: "data1", MountPath: "/data"}},
+					types.Disk{Type: types.UserDefined, UserDefined: &types.DiskUserDefined{PlatformDiskID: "data2", MountPath: "/data"}},
+				)
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[1\]\.userDefined\.mountPath: Duplicate value: "/data"$`,
+		},
+		{
+			// The etcd entry implicitly mounts /var/lib/etcd, so it participates
+			// in the mount path uniqueness check.
+			name:     "invalid user-defined mount path claiming the etcd mount path",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("master")
+				p.DiskSetup = append(p.DiskSetup,
+					types.Disk{Type: types.Etcd, Etcd: &types.DiskEtcd{PlatformDiskID: "etcddisk"}},
+					types.Disk{Type: types.UserDefined, UserDefined: &types.DiskUserDefined{PlatformDiskID: "userdisk", MountPath: "/var/lib/etcd"}},
+				)
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[1\]\.userDefined\.mountPath: Duplicate value: "/var/lib/etcd"$`,
+		},
+		{
+			name:     "invalid etcd entry colliding with an earlier user-defined mount path",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("master")
+				p.DiskSetup = append(p.DiskSetup,
+					types.Disk{Type: types.UserDefined, UserDefined: &types.DiskUserDefined{PlatformDiskID: "userdisk", MountPath: "/var/lib/etcd"}},
+					types.Disk{Type: types.Etcd, Etcd: &types.DiskEtcd{PlatformDiskID: "etcddisk"}},
+				)
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[1\]\.etcd: Duplicate value: "/var/lib/etcd"$`,
+		},
+		{
+			name:     "invalid etcd disk with empty platformDiskID",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("master")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type: types.Etcd,
+					Etcd: &types.DiskEtcd{PlatformDiskID: ""},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.etcd\.platformDiskID: Required value: a platform disk ID is required$`,
+		},
+		{
+			name:     "invalid swap disk with empty platformDiskID",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type: types.Swap,
+					Swap: &types.DiskSwap{PlatformDiskID: ""},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.diskSetup\[0\]\.swap\.platformDiskID: Required value: a platform disk ID is required$`,
+		},
+		{
 			name:     "valid distinct user-defined disks",
 			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
 			pool: func() *types.MachinePool {
@@ -641,7 +874,7 @@ func TestValidateMachinePool(t *testing.T) {
 				}
 				return p
 			}(),
-			expectedError: `^test-path\.diskSetup\.etcd: Too many: 2: must have at most 1 item$`,
+			expectedError: `^test-path\.diskSetup\[1\]\.etcd: Too many: 2: must have at most 1 item$`,
 		},
 		{
 			name:     "invalid multiple swap disks",
@@ -665,7 +898,7 @@ func TestValidateMachinePool(t *testing.T) {
 				}
 				return p
 			}(),
-			expectedError: `^test-path\.diskSetup\.swap: Too many: 2: must have at most 1 item$`,
+			expectedError: `^test-path\.diskSetup\[1\]\.swap: Too many: 2: must have at most 1 item$`,
 		},
 		{
 			name:     "valid mixed disk types",
