@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/installer/pkg/types/gcp"
 	"github.com/openshift/installer/pkg/types/ibmcloud"
 	"github.com/openshift/installer/pkg/types/openstack"
+	"github.com/openshift/installer/pkg/types/vsphere"
 )
 
 func validMachinePool(name string) *types.MachinePool {
@@ -383,12 +384,81 @@ func TestValidateMachinePool(t *testing.T) {
 			valid: true,
 		},
 		{
-			// The platform machine pool is left unset, following the convention
-			// for cases that cover rules holding for every platform: the Azure
-			// dataDisks built from a malformed entry would only add
-			// platform-side errors on top of the one under test.
-			name:     "invalid etcd disk with nil Etcd field",
+			// A diskSetup entry is paired with a data disk from the pool's
+			// platform stanza, so a stanza-less pool cannot carry one: machine
+			// generation would dereference the nil stanza.
+			name:     "etcd diskSetup without an azure platform stanza is invalid",
 			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("master")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "etcd",
+					UserDefined: nil,
+					Etcd:        &types.DiskEtcd{PlatformDiskID: "etcd"},
+					Swap:        nil,
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.platform\.azure\.dataDisks: Required value: diskSetup entries must be paired with data disks: set dataDisks on this machine pool's platform\.azure stanza or on platform\.azure\.defaultMachinePlatform$`,
+		},
+		{
+			// A pool without a platform stanza is legitimate as long as it
+			// carries no diskSetup: defaulting materializes the stanza only
+			// when defaultMachinePlatform is set.
+			name:     "azure machine pool without a platform stanza and without diskSetup is valid",
+			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			pool:     validMachinePool("master"),
+			valid:    true,
+		},
+		{
+			// Unlike Azure, vSphere never materializes a pool stanza from
+			// defaultMachinePlatform, so the stanza has to be on the pool
+			// itself.
+			name:     "user-defined diskSetup without a vsphere platform stanza is invalid",
+			platform: &types.Platform{VSphere: &vsphere.Platform{}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data", MountPath: "/mnt/data"},
+				})
+				return p
+			}(),
+			expectedError: `^test-path\.platform\.vsphere\.dataDisks: Required value: diskSetup entries must be paired with data disks: set dataDisks on this machine pool's platform\.vsphere stanza$`,
+		},
+		{
+			name:     "user-defined diskSetup with a vsphere platform stanza is valid",
+			platform: &types.Platform{VSphere: &vsphere.Platform{}},
+			pool: func() *types.MachinePool {
+				p := validMachinePool("worker")
+				p.DiskSetup = append(p.DiskSetup, types.Disk{
+					Type:        "user-defined",
+					UserDefined: &types.DiskUserDefined{PlatformDiskID: "data", MountPath: "/mnt/data"},
+				})
+				p.Platform = types.MachinePoolPlatform{
+					VSphere: &vsphere.MachinePool{
+						DataDisks: []vsphere.DataDisk{{Name: "data", SizeGiB: 32}},
+					},
+				}
+				return p
+			}(),
+			valid: true,
+		},
+		{
+			name:     "vsphere machine pool without a platform stanza and without diskSetup is valid",
+			platform: &types.Platform{VSphere: &vsphere.Platform{}},
+			pool:     validMachinePool("worker"),
+			valid:    true,
+		},
+		{
+			// These cases run on AWS with the platform machine pool left
+			// unset, for rules that hold for every platform: on Azure and
+			// vSphere a pool carrying diskSetup must have its platform
+			// stanza (dedicated cases cover that), and the Azure dataDisks
+			// built from a malformed entry would only add platform-side
+			// errors on top of the one under test.
+			name:     "invalid etcd disk with nil Etcd field",
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("master")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -437,7 +507,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid swap disk with nil Swap field",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -470,7 +540,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined disk platformDiskID too long",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -485,7 +555,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined disk platformDiskID with no alphanumeric characters",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -498,7 +568,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined disk with empty platformDiskID",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -511,7 +581,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined disk with nil UserDefined field",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -530,7 +600,7 @@ func TestValidateMachinePool(t *testing.T) {
 			// unset and reach validateDiskSetup without any platform validation
 			// running on top.
 			name:     "invalid duplicate platformDiskID across disk setup types",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("master")
 				// Both entries claim the same data disk, but resolve to different
@@ -545,7 +615,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined label normalizing onto the etcd label",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("master")
 				// "et-cd" is stripped of non-alphanumerics to "etcd", colliding with
@@ -561,7 +631,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid duplicate user-defined labels differing only in case",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				// The MachineConfig name is lower-cased, so these name one object.
@@ -575,7 +645,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid unrecognized disk setup type",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("master")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{Type: "bogus"})
@@ -585,7 +655,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid empty disk setup type",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("master")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{})
@@ -595,7 +665,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined disk with empty mount path",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -608,7 +678,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined disk with relative mount path",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -621,7 +691,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined disk with root mount path",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -634,7 +704,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined disk with non-normalized trailing slash",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -647,7 +717,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined disk with repeated slashes",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -660,7 +730,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined disk with parent-directory traversal",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -673,7 +743,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "valid user-defined disk with hyphenated mount path",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -688,7 +758,7 @@ func TestValidateMachinePool(t *testing.T) {
 			// Errors about a single entry carry its index, so the user can tell
 			// which of several entries of the same type is at fault.
 			name:     "invalid mount path on the second of two user-defined disks",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup,
@@ -701,7 +771,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid user-defined disk with whitespace in mount path",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -716,7 +786,7 @@ func TestValidateMachinePool(t *testing.T) {
 			// systemd expands "%" specifiers in Where=, which would then no
 			// longer match the unit name.
 			name:     "invalid user-defined disk with a systemd specifier in mount path",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -730,7 +800,7 @@ func TestValidateMachinePool(t *testing.T) {
 		{
 			// A line break would start a new directive in the mount unit.
 			name:     "invalid user-defined disk with a line break in mount path",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -745,7 +815,7 @@ func TestValidateMachinePool(t *testing.T) {
 			// "/" plus 249 characters escapes to a 255-character unit name
 			// including the ".mount" suffix, the longest systemd loads.
 			name:     "valid user-defined disk with the longest mount path systemd can name",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -761,7 +831,7 @@ func TestValidateMachinePool(t *testing.T) {
 			// escapes to four characters, so this 141-character path names a
 			// 356-character unit.
 			name:     "invalid user-defined disk whose mount unit name is too long",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -774,7 +844,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid duplicate user-defined mount paths",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup,
@@ -789,7 +859,7 @@ func TestValidateMachinePool(t *testing.T) {
 			// The etcd entry implicitly mounts /var/lib/etcd, so it participates
 			// in the mount path uniqueness check.
 			name:     "invalid user-defined mount path claiming the etcd mount path",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("master")
 				p.DiskSetup = append(p.DiskSetup,
@@ -802,7 +872,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid etcd entry colliding with an earlier user-defined mount path",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("master")
 				p.DiskSetup = append(p.DiskSetup,
@@ -815,7 +885,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid etcd disk with empty platformDiskID",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("master")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -828,7 +898,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "invalid swap disk with empty platformDiskID",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup, types.Disk{
@@ -841,7 +911,7 @@ func TestValidateMachinePool(t *testing.T) {
 		},
 		{
 			name:     "valid distinct user-defined disks",
-			platform: &types.Platform{Azure: &azure.Platform{Region: "eastus"}},
+			platform: &types.Platform{AWS: &aws.Platform{Region: "us-east-1"}},
 			pool: func() *types.MachinePool {
 				p := validMachinePool("worker")
 				p.DiskSetup = append(p.DiskSetup,

@@ -1,18 +1,23 @@
 package defaults
 
 import (
+	armcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 
 	"github.com/openshift/installer/pkg/types/azure"
 )
 
-// cachingTypeNone is the default caching mode for data disks. It matches what
-// the Machine API path effectively applies and Microsoft's recommendation for
-// write-heavy data disks, and it is the only mode valid for every SKU
-// (UltraSSD_LRS requires it). Defaulting it here keeps both provisioning paths
-// (CAPZ at install time, Machine API afterwards) on one value: the CAPZ
-// webhook would otherwise default an unset cachingType to ReadWrite.
-const cachingTypeNone = "None"
+// CachingTypeNone is the caching mode an omitted data disk cachingType
+// defaults to. It matches what the Machine API path effectively applies and
+// Microsoft's recommendation for write-heavy data disks, and it is the only
+// mode valid for every SKU (UltraSSD_LRS requires it). Defaulting it here
+// keeps both provisioning paths (CAPZ at install time, Machine API
+// afterwards) on one value: the CAPZ webhook would otherwise default an
+// unset cachingType to ReadWrite. The pool validation accepts this same
+// constant as the only caching mode on an UltraSSD_LRS data disk, so the
+// default can never fall foul of the validation. The value is Azure's own
+// spelling of the mode, taken from the Azure SDK.
+const CachingTypeNone = string(armcompute.CachingTypesNone)
 
 // SetMachinePoolDefaults sets the defaults for the platform-specific machine
 // pool configuration.
@@ -40,7 +45,7 @@ func SetMachinePoolDefaults(p *azure.MachinePool) {
 	copy(dataDisks, p.DataDisks)
 	for i := range dataDisks {
 		if dataDisks[i].CachingType == "" {
-			dataDisks[i].CachingType = cachingTypeNone
+			dataDisks[i].CachingType = CachingTypeNone
 		}
 	}
 	p.DataDisks = dataDisks

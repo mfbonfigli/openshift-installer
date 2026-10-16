@@ -11,6 +11,7 @@ import (
 
 	"github.com/openshift/installer/pkg/types"
 	"github.com/openshift/installer/pkg/types/azure"
+	"github.com/openshift/installer/pkg/types/azure/defaults"
 )
 
 func TestValidateMachinePool(t *testing.T) {
@@ -114,7 +115,7 @@ func TestValidateMachinePool(t *testing.T) {
 					},
 				},
 			},
-			expected: `^test-path\.dataDisks\.Lun: Required value: \"etcd\" must have lun id$`,
+			expected: `^test-path\.dataDisks\[0\]\.lun: Required value: \"etcd\" must have lun id$`,
 		},
 		{
 			name:          "lun id must be below 64",
@@ -140,7 +141,7 @@ func TestValidateMachinePool(t *testing.T) {
 					},
 				},
 			},
-			expected: `^test-path\.dataDisks\.Lun: Required value: \"etcd\" must have lun id between 0 and 63$`,
+			expected: `^test-path\.dataDisks\[0\]\.lun: Invalid value: 64: \"etcd\" must have lun id between 0 and 63$`,
 		},
 		{
 			name:          "multiple disk and setup PlatformDiskID does not match",
@@ -165,7 +166,7 @@ func TestValidateMachinePool(t *testing.T) {
 					},
 				},
 			},
-			expected: `^test-path\.dataDisks\.NameSuffix: Invalid value: \"foo\": does not match etcd PlatformDiskID \"etcd\"$`,
+			expected: `^test-path\.dataDisks\[0\]\.nameSuffix: Invalid value: \"foo\": does not match etcd PlatformDiskID \"etcd\"$`,
 		},
 		{
 			name:          "lun id must be above 0",
@@ -190,7 +191,7 @@ func TestValidateMachinePool(t *testing.T) {
 					},
 				},
 			},
-			expected: `^test-path\.dataDisks\.Lun: Required value: \"etcd\" must have lun id between 0 and 63$`,
+			expected: `^test-path\.dataDisks\[0\]\.lun: Invalid value: -1: \"etcd\" must have lun id between 0 and 63$`,
 		},
 		{
 			name:          "multiple disk size must be greater than zero",
@@ -278,7 +279,7 @@ func TestValidateMachinePool(t *testing.T) {
 					},
 				},
 			},
-			expected: `^test-path\.dataDisks\.Lun: Invalid value: \"containers\": dataDisk must have a unique lun number$`,
+			expected: `^test-path\.dataDisks\[1\]\.lun: Invalid value: 0: dataDisk must have a unique lun number$`,
 		},
 		{
 			name:          "empty nameSuffix is invalid",
@@ -1273,7 +1274,7 @@ func TestValidateMachinePool(t *testing.T) {
 					},
 				},
 			},
-			expected: `^test-path\.dataDisks\.Lun: Required value: \"containers\" must have lun id$`,
+			expected: `^test-path\.dataDisks\[0\]\.lun: Required value: \"containers\" must have lun id$`,
 		},
 		{
 			name:          "dataDisks without diskSetup are still checked for size",
@@ -1655,4 +1656,26 @@ func TestValidateMachinePool(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDefaultedDataDiskCachingPassesUltraSSDValidation pins the invariant
+// between defaulting and validation: an omitted cachingType is defaulted to
+// the one caching mode UltraSSD_LRS admits, so a defaulted pool must pass
+// the UltraSSD check. Defaulting and the check live in different packages
+// and share the constant through defaults.CachingTypeNone; if either side
+// ever moves to a different value this test fails.
+func TestDefaultedDataDiskCachingPassesUltraSSDValidation(t *testing.T) {
+	azurePool := &azure.MachinePool{
+		UltraSSDCapability: enabled,
+		DataDisks: []capz.DataDisk{{
+			NameSuffix:  "etcd",
+			DiskSizeGB:  32,
+			Lun:         ptr.To(int32(0)),
+			ManagedDisk: &capz.ManagedDiskParameters{StorageAccountType: "UltraSSD_LRS"},
+		}},
+	}
+	defaults.SetMachinePoolDefaults(azurePool)
+
+	err := ValidateMachinePool(azurePool, "master", &azure.Platform{CloudName: azure.PublicCloud}, nil, field.NewPath("test-path")).ToAggregate()
+	assert.NoError(t, err, "the defaulted caching type must pass the UltraSSD validation")
 }

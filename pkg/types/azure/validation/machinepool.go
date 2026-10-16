@@ -23,10 +23,6 @@ const (
 	// ultraSSDStorageAccountType is the data disk SKU that Azure will only
 	// attach to a VM created with the UltraSSD capability.
 	ultraSSDStorageAccountType = "UltraSSD_LRS"
-
-	// cachingTypeNone is the only caching mode Azure allows on an UltraSSD_LRS
-	// data disk.
-	cachingTypeNone = "None"
 )
 
 var (
@@ -223,15 +219,15 @@ func validateDataDiskSetup(azurePool *azure.MachinePool, pool *types.MachinePool
 		switch setup.Type {
 		case types.Etcd:
 			if setup.Etcd != nil && setup.Etcd.PlatformDiskID != d.NameSuffix {
-				allErrs = append(allErrs, field.Invalid(fldPath.Child("NameSuffix"), d.NameSuffix, fmt.Sprintf("does not match etcd PlatformDiskID %q", setup.Etcd.PlatformDiskID)))
+				allErrs = append(allErrs, field.Invalid(fldPath.Index(i).Child("nameSuffix"), d.NameSuffix, fmt.Sprintf("does not match etcd PlatformDiskID %q", setup.Etcd.PlatformDiskID)))
 			}
 		case types.Swap:
 			if setup.Swap != nil && setup.Swap.PlatformDiskID != d.NameSuffix {
-				allErrs = append(allErrs, field.Invalid(fldPath.Child("NameSuffix"), d.NameSuffix, fmt.Sprintf("does not match swap PlatformDiskID %q", setup.Swap.PlatformDiskID)))
+				allErrs = append(allErrs, field.Invalid(fldPath.Index(i).Child("nameSuffix"), d.NameSuffix, fmt.Sprintf("does not match swap PlatformDiskID %q", setup.Swap.PlatformDiskID)))
 			}
 		case types.UserDefined:
 			if setup.UserDefined != nil && setup.UserDefined.PlatformDiskID != d.NameSuffix {
-				allErrs = append(allErrs, field.Invalid(fldPath.Child("NameSuffix"), d.NameSuffix, fmt.Sprintf("does not match user defined PlatformDiskID %q", setup.UserDefined.PlatformDiskID)))
+				allErrs = append(allErrs, field.Invalid(fldPath.Index(i).Child("nameSuffix"), d.NameSuffix, fmt.Sprintf("does not match user defined PlatformDiskID %q", setup.UserDefined.PlatformDiskID)))
 			}
 		}
 	}
@@ -437,13 +433,13 @@ func validateDataDisk(p *azure.MachinePool, poolName string, platform *azure.Pla
 			}
 
 			if dataDisk.Lun == nil {
-				allErrs = append(allErrs, field.Required(fldPath.Child("Lun"), fmt.Sprintf("%q must have lun id", dataDisk.NameSuffix)))
+				allErrs = append(allErrs, field.Required(fldPath.Index(i).Child("lun"), fmt.Sprintf("%q must have lun id", dataDisk.NameSuffix)))
 			} else {
 				if *(dataDisk.Lun) < 0 || *(dataDisk.Lun) > 63 {
-					allErrs = append(allErrs, field.Required(fldPath.Child("Lun"), fmt.Sprintf("%q must have lun id between 0 and 63", dataDisk.NameSuffix)))
+					allErrs = append(allErrs, field.Invalid(fldPath.Index(i).Child("lun"), *(dataDisk.Lun), fmt.Sprintf("%q must have lun id between 0 and 63", dataDisk.NameSuffix)))
 				}
 				if lunNumbers.Has(*dataDisk.Lun) {
-					allErrs = append(allErrs, field.Invalid(fldPath.Child("Lun"), dataDisk.NameSuffix, "dataDisk must have a unique lun number"))
+					allErrs = append(allErrs, field.Invalid(fldPath.Index(i).Child("lun"), *(dataDisk.Lun), "dataDisk must have a unique lun number"))
 				} else {
 					lunNumbers.Insert(*dataDisk.Lun)
 				}
@@ -487,11 +483,11 @@ func validateDataDisk(p *azure.MachinePool, poolName string, platform *azure.Pla
 				// UltraSSD_LRS cannot be cached by Azure.
 				// An unset mode is defaulted to None, so only an explicit value conflicts.
 				if dataDisk.ManagedDisk.StorageAccountType == ultraSSDStorageAccountType &&
-					dataDisk.CachingType != "" && dataDisk.CachingType != cachingTypeNone {
+					dataDisk.CachingType != "" && dataDisk.CachingType != defaults.CachingTypeNone {
 					allErrs = append(allErrs, field.Invalid(
 						fldPath.Index(i).Child("cachingType"),
 						dataDisk.CachingType,
-						fmt.Sprintf("cachingType must be %q or left unset for an %s data disk", cachingTypeNone, ultraSSDStorageAccountType),
+						fmt.Sprintf("cachingType must be %q or left unset for an %s data disk", defaults.CachingTypeNone, ultraSSDStorageAccountType),
 					))
 				}
 				// UltraSSD_LRS requires additionalCapabilities.ultraSSDEnabled.

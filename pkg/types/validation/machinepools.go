@@ -336,6 +336,29 @@ func validateMachinePoolPlatform(platform *types.Platform, p *types.MachinePoolP
 			return openstackvalidation.ValidateMachinePool(platform.OpenStack, p.OpenStack, pool.Name, f)
 		})
 	}
+
+	// A diskSetup entry is paired with a data disk from the pool's platform
+	// stanza, so a pool carrying diskSetup must have that stanza: machine
+	// generation reads the stanza's dataDisks without a nil check, and with
+	// no stanza there is no data disk anywhere for the entries to pair with.
+	// Defaulting runs before validation and materializes the stanza from
+	// platform.<plat>.defaultMachinePlatform where the platform supports that
+	// (Azure does, vSphere does not), so a stanza still absent at this point
+	// cannot appear through inheritance either.
+	if len(pool.DiskSetup) > 0 {
+		switch platformName {
+		case azure.Name:
+			if p.Azure == nil {
+				allErrs = append(allErrs, field.Required(fldPath.Child(azure.Name, "dataDisks"),
+					"diskSetup entries must be paired with data disks: set dataDisks on this machine pool's platform.azure stanza or on platform.azure.defaultMachinePlatform"))
+			}
+		case vsphere.Name:
+			if p.VSphere == nil {
+				allErrs = append(allErrs, field.Required(fldPath.Child(vsphere.Name, "dataDisks"),
+					"diskSetup entries must be paired with data disks: set dataDisks on this machine pool's platform.vsphere stanza"))
+			}
+		}
+	}
 	return allErrs
 }
 

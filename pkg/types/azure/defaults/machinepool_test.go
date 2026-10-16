@@ -26,7 +26,7 @@ func TestSetMachinePoolDefaults(t *testing.T) {
 			expected: []v1beta1.DataDisk{{
 				NameSuffix:  "etcd",
 				DiskSizeGB:  256,
-				CachingType: cachingTypeNone,
+				CachingType: CachingTypeNone,
 			}},
 		},
 		{
@@ -42,7 +42,7 @@ func TestSetMachinePoolDefaults(t *testing.T) {
 				NameSuffix:  "etcd",
 				DiskSizeGB:  256,
 				ManagedDisk: &v1beta1.ManagedDiskParameters{StorageAccountType: "Premium_LRS"},
-				CachingType: cachingTypeNone,
+				CachingType: CachingTypeNone,
 			}},
 		},
 		{
@@ -98,7 +98,7 @@ func TestSetMachinePoolDefaults(t *testing.T) {
 				NameSuffix:  "etcd",
 				DiskSizeGB:  256,
 				ManagedDisk: &v1beta1.ManagedDiskParameters{StorageAccountType: "UltraSSD_LRS"},
-				CachingType: cachingTypeNone,
+				CachingType: CachingTypeNone,
 			}},
 		},
 		{
@@ -120,7 +120,7 @@ func TestSetMachinePoolDefaults(t *testing.T) {
 				{
 					NameSuffix:  "etcd",
 					DiskSizeGB:  256,
-					CachingType: cachingTypeNone,
+					CachingType: CachingTypeNone,
 				},
 				{
 					NameSuffix:  "containers",
@@ -156,7 +156,7 @@ func TestSetMachinePoolDefaultsDoesNotMutateInheritedDisks(t *testing.T) {
 	Apply(defaultMachinePlatform, pool)
 	SetMachinePoolDefaults(pool)
 
-	assert.Equal(t, cachingTypeNone, pool.DataDisks[0].CachingType, "inherited data disk should have been defaulted")
+	assert.Equal(t, CachingTypeNone, pool.DataDisks[0].CachingType, "inherited data disk should have been defaulted")
 	// The pool's disks must be a private copy: mutating the shared backing
 	// array would rewrite the default machine platform and with it every
 	// other pool that inherits from it.
